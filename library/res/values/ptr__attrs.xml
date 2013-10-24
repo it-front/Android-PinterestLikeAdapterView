@@ -87,9 +87,9 @@
         <!-- Sets the padding, in pixels, of the bottom edge; see {@link android.R.attr#padding}. -->
         <attr name="paddingBottom" format="dimension" />
         <!-- Sets the padding, in pixels, of the start edge; see {@link android.R.attr#padding}. -->
-        <attr name="paddingStart" format="dimension" />
+<!--         <attr name="android:paddingStart" /> -->
         <!-- Sets the padding, in pixels, of the end edge; see {@link android.R.attr#padding}. -->
-        <attr name="paddingEnd" format="dimension" />
+<!--         <attr name="android:paddingEnd" /> -->
 
         <!--
              Boolean that controls whether a view can take focus.  By default the user can not
@@ -720,7 +720,7 @@
              Otherwise the selector is drawn behind the selected item. The default
              value is false.
         -->
-        <attr name="drawSelectorOnTop" format="boolean" />
+        <attr name="android:drawSelectorOnTop" />
         <!-- Used by ListView and GridView to stack their content from the bottom. -->
         <attr name="stackFromBottom" format="boolean" />
         <!--
