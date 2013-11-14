@@ -21,7 +21,7 @@
     <attr name="listViewStyle" format="reference" />
     
     <declare-styleable name="PinterestLikeAdapterView">
-        <attr name="plaColumnNumber" format="integer" />
+        <attr name="android:numColumns" />
         <attr name="plaLandscapeColumnNumber" format="integer" />
         <attr name="plaColumnPaddingLeft" format="dimension" />
 		<attr name="plaColumnPaddingRight" format="dimension" />
