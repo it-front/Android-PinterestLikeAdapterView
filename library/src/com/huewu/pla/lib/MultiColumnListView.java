@@ -142,10 +142,11 @@ public class MultiColumnListView extends PLA_ListView {
 					heightMeasureSpec);
 	}
 
-	@Override
-	protected int modifyFlingInitialVelocity(int initialVelocity) {
-		return initialVelocity / mColumnNumber;
-	}
+	// Why would I even do this? :P
+	// @Override
+	// protected int modifyFlingInitialVelocity(int initialVelocity) {
+	// return initialVelocity / mColumnNumber;
+	// }
 
 	@Override
 	protected void onItemAddedToList(int position, boolean flow) {
@@ -220,7 +221,9 @@ public class MultiColumnListView extends PLA_ListView {
 		int result = Integer.MIN_VALUE;
 		for (Column c : mColumns) {
 			int bottom = c.getBottom();
-			result = result < bottom ? bottom : result;
+			if (c.getNumberOfChildren() != 0) {
+				result = result < bottom ? bottom : result;
+			}
 		}
 		return result;
 	}
@@ -231,7 +234,9 @@ public class MultiColumnListView extends PLA_ListView {
 		int result = Integer.MAX_VALUE;
 		for (Column c : mColumns) {
 			int top = c.getTop();
-			result = result > top ? top : result;
+			if (c.getNumberOfChildren() != 0) {
+				result = result > top ? top : result;
+			}
 		}
 		return result;
 	}
@@ -334,7 +339,11 @@ public class MultiColumnListView extends PLA_ListView {
 		return mColumns[colIndex].getColumnLeft();
 	}
 
-	private int getColumnWidth(int pos) {
+	public int getColumnWidth() {
+		return mFixedColumn.mColumnWidth;
+	}
+
+	public int getColumnWidth(int pos) {
 		int colIndex = mItems.get(pos, -1);
 
 		if (colIndex == -1)
@@ -354,6 +363,7 @@ public class MultiColumnListView extends PLA_ListView {
 		private int mColumnLeft;
 		private int mSynchedTop = 0;
 		private int mSynchedBottom = 0;
+		private int childCount = 0;
 
 		// TODO is it ok to use item position info to identify item??
 
@@ -373,21 +383,29 @@ public class MultiColumnListView extends PLA_ListView {
 			return mIndex;
 		}
 
+		public int getNumberOfChildren() {
+			return childCount;
+		}
+
 		public int getBottom() {
 			// find biggest value.
 			int bottom = Integer.MIN_VALUE;
 			int childCount = getChildCount();
+			this.childCount = 0;
 
 			for (int index = 0; index < childCount; ++index) {
 				View v = getChildAt(index);
 
-				if (v.getLeft() != mColumnLeft && isFixedView(v) == false)
+				if (v.getLeft() != mColumnLeft && isFixedView(v) == false) {
 					continue;
+				}
 				bottom = bottom < v.getBottom() ? v.getBottom() : bottom;
+				this.childCount++;
 			}
 
-			if (bottom == Integer.MIN_VALUE)
+			if (bottom == Integer.MIN_VALUE) {
 				return mSynchedBottom; // no child for this column..
+			}
 			return bottom;
 		}
 
@@ -401,8 +419,10 @@ public class MultiColumnListView extends PLA_ListView {
 			for (int index = 0; index < childCount; ++index) {
 				View v = getChildAt(index);
 
-				if (v.getLeft() != mColumnLeft && isFixedView(v) == false)
+				// Don't mess with unrelated views!
+				if (v.getLeft() != mColumnLeft || isFixedView(v)) {
 					continue;
+				}
 
 				v.offsetTopAndBottom(offset);
 			}
@@ -412,11 +432,15 @@ public class MultiColumnListView extends PLA_ListView {
 			// find smallest value.
 			int top = Integer.MAX_VALUE;
 			int childCount = getChildCount();
+			this.childCount = 0;
+
 			for (int index = 0; index < childCount; ++index) {
 				View v = getChildAt(index);
-				if (v.getLeft() != mColumnLeft && isFixedView(v) == false)
+				if (v.getLeft() != mColumnLeft && isFixedView(v) == false) {
 					continue;
+				}
 				top = top > v.getTop() ? v.getTop() : top;
+				this.childCount++;
 			}
 
 			if (top == Integer.MAX_VALUE)

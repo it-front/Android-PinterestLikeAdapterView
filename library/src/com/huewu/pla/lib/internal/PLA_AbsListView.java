@@ -2350,10 +2350,14 @@ public abstract class PLA_AbsListView extends PLA_AdapterView<ListAdapter>
 	 *         nothing to do.
 	 */
 	boolean trackMotionScroll(int deltaY, int incrementalDeltaY) {
+		// incrementalDeltaY = (int) (incrementalDeltaY * 2);
 		final int childCount = getChildCount();
 		if (childCount == 0) {
 			return true;
 		}
+
+		// firstTop and lastBottom are NOT calculated correctly in
+		// MultiColumnListView when empty columns are present.
 
 		final int firstTop = getScrollChildTop(); // check scroll.
 		final int lastBottom = getScrollChildBottom(); // check scroll.
@@ -2381,14 +2385,15 @@ public abstract class PLA_AbsListView extends PLA_AdapterView<ListAdapter>
 
 		final int firstPosition = mFirstPosition;
 
-		if (firstPosition == 0 && firstTop >= listPadding.top && deltaY >= 0) {
+		if (firstPosition == 0 && firstTop >= listPadding.top
+				&& incrementalDeltaY >= 0) {
 			// Don't need to move views down if the top of the first position
 			// is already visible
 			return true;
 		}
 
 		if (firstPosition + childCount == mItemCount && lastBottom <= end
-				&& deltaY <= 0) {
+				&& incrementalDeltaY <= 0) {
 			// Don't need to move views up if the bottom of the last position
 			// is already visible
 			return true;
