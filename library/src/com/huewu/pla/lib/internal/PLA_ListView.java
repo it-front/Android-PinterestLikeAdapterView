@@ -26,6 +26,9 @@ import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.os.Parcel;
+import android.os.Parcelable;
+import android.support.v4.util.LongSparseArray;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.util.SparseBooleanArray;
@@ -34,6 +37,8 @@ import android.view.View;
 import android.view.ViewDebug;
 import android.view.ViewGroup;
 import android.view.accessibility.AccessibilityEvent;
+import android.widget.AbsListView;
+import android.widget.Checkable;
 import android.widget.ListAdapter;
 import android.widget.WrapperListAdapter;
 
@@ -85,6 +90,16 @@ public class PLA_ListView extends PLA_AbsListView {
 	private static final float MAX_SCROLL_FACTOR = 0.33f;
 
 	/**
+	 * Normal list that does not indicate choices
+	 */
+	public static final int CHOICE_MODE_NONE = 0;
+
+	/**
+	 * The list allows up to one choice
+	 */
+	public static final int CHOICE_MODE_SINGLE = 1;
+
+	/**
 	 * A class that represents a fixed view in a list, for example a header at
 	 * the top or a footer at the bottom.
 	 */
@@ -123,6 +138,33 @@ public class PLA_ListView extends PLA_AbsListView {
 	// used for temporary calculations.
 	private final Rect mTempRect = new Rect();
 	private Paint mDividerPaint;
+
+	/**
+	 * Controls if/how the user may choose/check items in the list
+	 */
+	int mChoiceMode = CHOICE_MODE_NONE;
+
+	/**
+	 * Running count of how many items are currently checked
+	 */
+	int mCheckedItemCount;
+
+	/**
+	 * Running state of which positions are currently checked
+	 */
+	SparseBooleanArray mCheckStates;
+
+	/**
+	 * Running state of which IDs are currently checked. If there is a value for
+	 * a given key, the checked state for that ID is true and the value holds
+	 * the last known position in the adapter for that id.
+	 */
+	LongSparseArray<Integer> mCheckedIdStates;
+
+	/**
+	 * If mAdapter != null, whenever this is true the adapter has stable IDs.
+	 */
+	boolean mAdapterHasStableIds;
 
 	public PLA_ListView(Context context) {
 		this(context, null);
@@ -169,6 +211,14 @@ public class PLA_ListView extends PLA_AbsListView {
 				R.styleable.ListView_headerDividersEnabled, true);
 		mFooterDividersEnabled = a.getBoolean(
 				R.styleable.ListView_footerDividersEnabled, true);
+
+		int choiceMode = a.getInt(R.styleable.ListView_android_choiceMode,
+				CHOICE_MODE_NONE);
+		if (choiceMode != CHOICE_MODE_NONE && choiceMode != CHOICE_MODE_SINGLE) {
+			throw new IllegalArgumentException(
+					"This only supports no or single choice mode for now!");
+		}
+		setChoiceMode(choiceMode);
 
 		a.recycle();
 	}
@@ -490,6 +540,22 @@ public class PLA_ListView extends PLA_AbsListView {
 			mAreAllItemsSelectable = true;
 			checkFocus();
 			// Nothing selected
+		}
+
+		if (adapter != null) {
+			mAdapterHasStableIds = mAdapter.hasStableIds();
+			if (mChoiceMode != CHOICE_MODE_NONE && mAdapterHasStableIds
+					&& mCheckedIdStates == null) {
+				mCheckedIdStates = new LongSparseArray<Integer>();
+			}
+		}
+
+		if (mCheckStates != null) {
+			mCheckStates.clear();
+		}
+
+		if (mCheckedIdStates != null) {
+			mCheckedIdStates.clear();
 		}
 
 		requestLayout();
@@ -1488,6 +1554,14 @@ public class PLA_ListView extends PLA_AbsListView {
 			child.setPressed(isPressed);
 		}
 
+		if (mChoiceMode != CHOICE_MODE_NONE && mCheckStates != null) {
+			if (child instanceof Checkable) {
+				((Checkable) child).setChecked(mCheckStates.get(position));
+			} else if (getContext().getApplicationInfo().targetSdkVersion >= android.os.Build.VERSION_CODES.HONEYCOMB) {
+				child.setActivated(mCheckStates.get(position));
+			}
+		}
+
 		if (needToMeasure) {
 			int childWidthSpec = ViewGroup.getChildMeasureSpec(
 					mWidthMeasureSpec, mListPadding.left + mListPadding.right,
@@ -2296,9 +2370,91 @@ public class PLA_ListView extends PLA_AbsListView {
 	public boolean performItemClick(View view, int position, long id) {
 		boolean handled = false;
 
+		if (mChoiceMode != CHOICE_MODE_NONE) {
+			handled = true;
+			boolean checkedStateChanged = false;
+
+			boolean checked = !mCheckStates.get(position, false);
+			if (checked) {
+				mCheckStates.clear();
+				mCheckStates.put(position, true);
+				if (mCheckedIdStates != null && mAdapter.hasStableIds()) {
+					mCheckedIdStates.clear();
+					mCheckedIdStates
+							.put(mAdapter.getItemId(position), position);
+				}
+				mCheckedItemCount = 1;
+			} else if (mCheckStates.size() == 0 || !mCheckStates.valueAt(0)) {
+				mCheckedItemCount = 0;
+			}
+			checkedStateChanged = true;
+
+			if (checkedStateChanged) {
+				updateOnScreenCheckedViews();
+			}
+		}
+
 		handled |= super.performItemClick(view, position, id);
 
 		return handled;
+	}
+
+	/**
+	 * Perform a quick, in-place update of the checked or activated state on all
+	 * visible item views. This should only be called when a valid choice mode
+	 * is active.
+	 */
+	private void updateOnScreenCheckedViews() {
+		final int firstPos = mFirstPosition;
+		final int count = getChildCount();
+		final boolean useActivated = getContext().getApplicationInfo().targetSdkVersion >= android.os.Build.VERSION_CODES.HONEYCOMB;
+		for (int i = 0; i < count; i++) {
+			final View child = getChildAt(i);
+			final int position = firstPos + i;
+
+			if (child instanceof Checkable) {
+				((Checkable) child).setChecked(mCheckStates.get(position));
+			} else if (useActivated) {
+				child.setActivated(mCheckStates.get(position));
+			}
+		}
+	}
+
+	/**
+	 * @see #setChoiceMode(int)
+	 * 
+	 * @return The current choice mode
+	 */
+	public int getChoiceMode() {
+		return mChoiceMode;
+	}
+
+	/**
+	 * Defines the choice behavior for the List. By default, Lists do not have
+	 * any choice behavior ({@link #CHOICE_MODE_NONE}). By setting the
+	 * choiceMode to {@link #CHOICE_MODE_SINGLE}, the List allows up to one item
+	 * to be in a chosen state.
+	 * 
+	 * @param choiceMode
+	 *            One of {@link #CHOICE_MODE_NONE} or
+	 *            {@link #CHOICE_MODE_SINGLE}
+	 */
+	public void setChoiceMode(int choiceMode) {
+		if (choiceMode != CHOICE_MODE_NONE && choiceMode != CHOICE_MODE_SINGLE) {
+			throw new IllegalArgumentException(
+					"This view currently only supports no or single choice mode.");
+		}
+
+		mChoiceMode = choiceMode;
+		if (mChoiceMode != CHOICE_MODE_NONE) {
+			if (mCheckStates == null) {
+				mCheckStates = new SparseBooleanArray(0);
+			}
+			if (mCheckedIdStates == null && mAdapter != null
+					&& mAdapter.hasStableIds()) {
+				mCheckedIdStates = new LongSparseArray<Integer>(0);
+			}
+		}
 	}
 
 	/**
@@ -2312,6 +2468,57 @@ public class PLA_ListView extends PLA_AbsListView {
 	 *            The new checked state for the item
 	 */
 	public void setItemChecked(int position, boolean value) {
+		if (mChoiceMode == CHOICE_MODE_NONE) {
+			return;
+		}
+
+		boolean updateIds = mCheckedIdStates != null && mAdapter.hasStableIds();
+		// Clear all values if we're checking something, or unchecking the
+		// currently
+		// selected item
+		if (value || isItemChecked(position)) {
+			mCheckStates.clear();
+			if (updateIds) {
+				mCheckedIdStates.clear();
+			}
+		}
+		// this may end up selecting the value we just cleared but this way
+		// we ensure length of mCheckStates is 1, a fact
+		// getCheckedItemPosition relies on
+		if (value) {
+			mCheckStates.put(position, true);
+			if (updateIds) {
+				mCheckedIdStates.put(mAdapter.getItemId(position), position);
+			}
+			mCheckedItemCount = 1;
+		} else if (mCheckStates.size() == 0 || !mCheckStates.valueAt(0)) {
+			mCheckedItemCount = 0;
+		}
+
+		// Do not generate a data change while we are in the layout phase
+		if (!mInLayout && !mBlockLayoutRequests) {
+			mDataChanged = true;
+			rememberSyncState();
+			requestLayout();
+		}
+	}
+
+	/**
+	 * Returns the number of items currently selected. This will only be valid
+	 * if the choice mode is not {@link #CHOICE_MODE_NONE} (default).
+	 * 
+	 * <p>
+	 * To determine the specific items that are currently selected, use one of
+	 * the <code>getChecked*</code> methods.
+	 * 
+	 * @return The number of items currently selected
+	 * 
+	 * @see #getCheckedItemPosition()
+	 * @see #getCheckedItemPositions()
+	 * @see #getCheckedItemIds()
+	 */
+	public int getCheckedItemCount() {
+		return mCheckedItemCount;
 	}
 
 	/**
@@ -2327,6 +2534,10 @@ public class PLA_ListView extends PLA_AbsListView {
 	 * @see #setChoiceMode(int)
 	 */
 	public boolean isItemChecked(int position) {
+		if (mChoiceMode != CHOICE_MODE_NONE && mCheckStates != null) {
+			return mCheckStates.get(position);
+		}
+
 		return false;
 	}
 
@@ -2340,6 +2551,11 @@ public class PLA_ListView extends PLA_AbsListView {
 	 * @see #setChoiceMode(int)
 	 */
 	public int getCheckedItemPosition() {
+		if (mChoiceMode == CHOICE_MODE_SINGLE && mCheckStates != null
+				&& mCheckStates.size() == 1) {
+			return mCheckStates.keyAt(0);
+		}
+
 		return INVALID_POSITION;
 	}
 
@@ -2353,26 +2569,10 @@ public class PLA_ListView extends PLA_AbsListView {
 	 *         {@link #CHOICE_MODE_NONE}.
 	 */
 	public SparseBooleanArray getCheckedItemPositions() {
-		return null;
-	}
-
-	/**
-	 * Returns the set of checked items ids. The result is only valid if the
-	 * choice mode has not been set to {@link #CHOICE_MODE_NONE}.
-	 * 
-	 * @return A new array which contains the id of each checked item in the
-	 *         list.
-	 * 
-	 * @deprecated Use {@link #getCheckedItemIds()} instead.
-	 */
-	@Deprecated
-	public long[] getCheckItemIds() {
-		// Use new behavior that correctly handles stable ID mapping.
-		if (mAdapter != null && mAdapter.hasStableIds()) {
-			return getCheckedItemIds();
+		if (mChoiceMode != CHOICE_MODE_NONE) {
+			return mCheckStates;
 		}
-
-		return new long[0];
+		return null;
 	}
 
 	/**
@@ -2384,13 +2584,212 @@ public class PLA_ListView extends PLA_AbsListView {
 	 *         list.
 	 */
 	public long[] getCheckedItemIds() {
-		return new long[0];
+		if (mChoiceMode == CHOICE_MODE_NONE || mCheckedIdStates == null
+				|| mAdapter == null) {
+			return new long[0];
+		}
+
+		final LongSparseArray<Integer> idStates = mCheckedIdStates;
+		final int count = idStates.size();
+		final long[] ids = new long[count];
+
+		for (int i = 0; i < count; i++) {
+			ids[i] = idStates.keyAt(i);
+		}
+
+		return ids;
 	}
 
 	/**
 	 * Clear any choices previously set
 	 */
 	public void clearChoices() {
+		if (mCheckStates != null) {
+			mCheckStates.clear();
+		}
+		if (mCheckedIdStates != null) {
+			mCheckedIdStates.clear();
+		}
+		mCheckedItemCount = 0;
+	}
+
+	static class SavedState extends BaseSavedState {
+		long selectedId;
+		long firstId;
+		int viewTop;
+		int position;
+		int height;
+		int checkedItemCount;
+		SparseBooleanArray checkState;
+		LongSparseArray<Integer> checkIdState;
+
+		/**
+		 * Constructor called from {@link AbsListView#onSaveInstanceState()}
+		 */
+		SavedState(Parcelable superState) {
+			super(superState);
+		}
+
+		/**
+		 * Constructor called from {@link #CREATOR}
+		 */
+		private SavedState(Parcel in) {
+			super(in);
+			selectedId = in.readLong();
+			firstId = in.readLong();
+			viewTop = in.readInt();
+			position = in.readInt();
+			height = in.readInt();
+			checkedItemCount = in.readInt();
+			checkState = in.readSparseBooleanArray();
+			final int N = in.readInt();
+			if (N > 0) {
+				checkIdState = new LongSparseArray<Integer>();
+				for (int i = 0; i < N; i++) {
+					final long key = in.readLong();
+					final int value = in.readInt();
+					checkIdState.put(key, value);
+				}
+			}
+		}
+
+		@Override
+		public void writeToParcel(Parcel out, int flags) {
+			super.writeToParcel(out, flags);
+			out.writeLong(selectedId);
+			out.writeLong(firstId);
+			out.writeInt(viewTop);
+			out.writeInt(position);
+			out.writeInt(height);
+			out.writeInt(checkedItemCount);
+			out.writeSparseBooleanArray(checkState);
+			final int N = checkIdState != null ? checkIdState.size() : 0;
+			out.writeInt(N);
+			for (int i = 0; i < N; i++) {
+				out.writeLong(checkIdState.keyAt(i));
+				out.writeInt(checkIdState.valueAt(i));
+			}
+		}
+
+		@Override
+		public String toString() {
+			return "AbsListView.SavedState{"
+					+ Integer.toHexString(System.identityHashCode(this))
+					+ " selectedId=" + selectedId //
+					+ " firstId=" + firstId//
+					+ " viewTop=" + viewTop //
+					+ " position=" + position//
+					+ " height=" + height //
+					+ " checkState=" + checkState //
+					+ "}";
+		}
+
+		public static final Parcelable.Creator<SavedState> CREATOR = new Parcelable.Creator<SavedState>() {
+			@Override
+			public SavedState createFromParcel(Parcel in) {
+				return new SavedState(in);
+			}
+
+			@Override
+			public SavedState[] newArray(int size) {
+				return new SavedState[size];
+			}
+		};
+	}
+
+	@Override
+	public Parcelable onSaveInstanceState() {
+		Parcelable superState = super.onSaveInstanceState();
+
+		SavedState ss = new SavedState(superState);
+
+		boolean haveChildren = getChildCount() > 0 && mItemCount > 0;
+		long selectedId = getSelectedItemId();
+		ss.selectedId = selectedId;
+		ss.height = getHeight();
+
+		if (selectedId >= 0) {
+			// Remember the selection
+			ss.viewTop = mSelectedTop;
+			ss.position = getSelectedItemPosition();
+			ss.firstId = INVALID_POSITION;
+		} else {
+			if (haveChildren && mFirstPosition > 0) {
+				// Remember the position of the first child.
+				// We only do this if we are not currently at the top of
+				// the list, for two reasons:
+				// (1) The list may be in the process of becoming empty, in
+				// which case mItemCount may not be 0, but if we try to
+				// ask for any information about position 0 we will crash.
+				// (2) Being "at the top" seems like a special case, anyway,
+				// and the user wouldn't expect to end up somewhere else when
+				// they revisit the list even if its content has changed.
+				View v = getChildAt(0);
+				ss.viewTop = v.getTop();
+				int firstPos = mFirstPosition;
+				if (firstPos >= mItemCount) {
+					firstPos = mItemCount - 1;
+				}
+				ss.position = firstPos;
+				ss.firstId = mAdapter.getItemId(firstPos);
+			} else {
+				ss.viewTop = 0;
+				ss.firstId = INVALID_POSITION;
+				ss.position = 0;
+			}
+		}
+
+		if (mCheckStates != null) {
+			ss.checkState = mCheckStates.clone();
+		}
+		if (mCheckedIdStates != null) {
+			final LongSparseArray<Integer> idState = new LongSparseArray<Integer>();
+			final int count = mCheckedIdStates.size();
+			for (int i = 0; i < count; i++) {
+				idState.put(mCheckedIdStates.keyAt(i),
+						mCheckedIdStates.valueAt(i));
+			}
+			ss.checkIdState = idState;
+		}
+		ss.checkedItemCount = mCheckedItemCount;
+
+		return ss;
+	}
+
+	@Override
+	public void onRestoreInstanceState(Parcelable state) {
+		SavedState ss = (SavedState) state;
+
+		super.onRestoreInstanceState(ss.getSuperState());
+		mDataChanged = true;
+
+		mSyncHeight = ss.height;
+
+		if (ss.selectedId >= 0) {
+			mNeedSync = true;
+			mSyncRowId = ss.selectedId;
+			mSyncPosition = ss.position;
+			mSpecificTop = ss.viewTop;
+			mSyncMode = SYNC_SELECTED_POSITION;
+		} else if (ss.firstId >= 0) {
+			mNeedSync = true;
+			mSyncRowId = ss.firstId;
+			mSyncPosition = ss.position;
+			mSpecificTop = ss.viewTop;
+			mSyncMode = SYNC_FIRST_POSITION;
+		}
+
+		if (ss.checkState != null) {
+			mCheckStates = ss.checkState;
+		}
+
+		if (ss.checkIdState != null) {
+			mCheckedIdStates = ss.checkIdState;
+		}
+
+		mCheckedItemCount = ss.checkedItemCount;
+
+		requestLayout();
 	}
 
 }// end of class

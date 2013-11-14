@@ -830,6 +830,8 @@
         <!-- Drawable to draw below list content. -->
         
         <attr name="overScrollFooter" format="reference|color" />
+        
+        <attr name="android:choiceMode"/>
     </declare-styleable>
 
 </resources>
