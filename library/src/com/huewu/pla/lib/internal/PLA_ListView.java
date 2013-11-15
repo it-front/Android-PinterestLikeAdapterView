@@ -18,6 +18,7 @@ package com.huewu.pla.lib.internal;
 
 import java.util.ArrayList;
 
+import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
@@ -26,6 +27,7 @@ import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.support.v4.util.LongSparseArray;
@@ -1511,6 +1513,7 @@ public class PLA_ListView extends PLA_AbsListView {
 	 *            Has this view been pulled from the recycle bin? If so it does
 	 *            not need to be remeasured.
 	 */
+	@TargetApi(11)
 	private void setupChild(View child, int position, int y, boolean flowDown,
 			int childrenLeft, boolean selected, boolean recycled) {
 
@@ -1557,7 +1560,8 @@ public class PLA_ListView extends PLA_AbsListView {
 		if (mChoiceMode != CHOICE_MODE_NONE && mCheckStates != null) {
 			if (child instanceof Checkable) {
 				((Checkable) child).setChecked(mCheckStates.get(position));
-			} else if (getContext().getApplicationInfo().targetSdkVersion >= android.os.Build.VERSION_CODES.HONEYCOMB) {
+			} else if (getContext().getApplicationInfo().targetSdkVersion >= android.os.Build.VERSION_CODES.HONEYCOMB
+					&& Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
 				child.setActivated(mCheckStates.get(position));
 			}
 		}
@@ -2404,10 +2408,12 @@ public class PLA_ListView extends PLA_AbsListView {
 	 * visible item views. This should only be called when a valid choice mode
 	 * is active.
 	 */
+	@TargetApi(11)
 	private void updateOnScreenCheckedViews() {
 		final int firstPos = mFirstPosition;
 		final int count = getChildCount();
-		final boolean useActivated = getContext().getApplicationInfo().targetSdkVersion >= android.os.Build.VERSION_CODES.HONEYCOMB;
+		final boolean useActivated = getContext().getApplicationInfo().targetSdkVersion >= android.os.Build.VERSION_CODES.HONEYCOMB
+				&& Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB;
 		for (int i = 0; i < count; i++) {
 			final View child = getChildAt(i);
 			final int position = firstPos + i;
@@ -2740,7 +2746,7 @@ public class PLA_ListView extends PLA_AbsListView {
 		}
 
 		if (mCheckStates != null) {
-			ss.checkState = mCheckStates.clone();
+			ss.checkState = cloneCheckStates();
 		}
 		if (mCheckedIdStates != null) {
 			final LongSparseArray<Integer> idState = new LongSparseArray<Integer>();
@@ -2754,6 +2760,26 @@ public class PLA_ListView extends PLA_AbsListView {
 		ss.checkedItemCount = mCheckedItemCount;
 
 		return ss;
+	}
+
+	@TargetApi(14)
+	private SparseBooleanArray cloneCheckStates() {
+		if (mCheckStates == null) {
+			return null;
+		}
+
+		SparseBooleanArray checkedStates;
+		if (Build.VERSION.SDK_INT >= 14) {
+			checkedStates = mCheckStates.clone();
+		} else {
+			checkedStates = new SparseBooleanArray();
+
+			for (int i = 0, len = mCheckStates.size(); i < len; ++i) {
+				checkedStates.put(mCheckStates.keyAt(i),
+						mCheckStates.valueAt(i));
+			}
+		}
+		return checkedStates;
 	}
 
 	@Override
