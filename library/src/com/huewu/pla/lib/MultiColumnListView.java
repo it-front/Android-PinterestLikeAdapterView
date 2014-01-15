@@ -62,7 +62,9 @@ public class MultiColumnListView extends PLA_ListView {
 	private Rect mFrameRect = new Rect();
 
 	private void init(AttributeSet attrs) {
-		getWindowVisibleDisplayFrame(mFrameRect);
+		if (!isInEditMode()) {
+			getWindowVisibleDisplayFrame(mFrameRect);
+		}
 
 		if (attrs == null) {
 			mColumnNumber = DEFAULT_COLUMN_NUMBER; // default column number is
